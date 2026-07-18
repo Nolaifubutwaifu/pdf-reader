@@ -8,11 +8,18 @@ export interface NRect {
   h: number;
 }
 
+/** A freehand pen stroke on a notebook page, points normalized to canvas size. */
+export interface Stroke {
+  color: string;
+  pts: { x: number; y: number }[];
+}
+
 export interface PdfDoc {
   id: string;
   name: string;
   data: Blob;
   addedAt: number;
+  lastOpenedAt?: number;
 }
 
 export interface Annotation {
@@ -25,6 +32,10 @@ export interface Annotation {
   quote: string;
   /** Notebook content attached to this passage. */
   note: string;
+  /** Short margin comment (💬) attached to this passage. */
+  comment: string;
+  /** Hand-drawn sketch strokes on the notebook page. */
+  strokes: Stroke[];
   createdAt: number;
 }
 
@@ -37,3 +48,18 @@ db.version(1).stores({
   pdfs: 'id, addedAt',
   annotations: 'id, pdfId, page, createdAt',
 });
+
+db.version(2)
+  .stores({
+    pdfs: 'id, addedAt',
+    annotations: 'id, pdfId, page, createdAt',
+  })
+  .upgrade((tx) =>
+    tx
+      .table('annotations')
+      .toCollection()
+      .modify((a) => {
+        a.comment ??= '';
+        a.strokes ??= [];
+      }),
+  );

@@ -1,33 +1,45 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type Annotation, type NRect, type PdfDoc } from '@/lib/db';
 import { cleanSelectionRects } from '@/lib/rects';
-import NotebookPanel from './NotebookPanel';
+import NotebookPanel, { type NotebookLayout } from './NotebookPanel';
+import NotesOverview from './NotesOverview';
 import 'react-pdf/dist/Page/TextLayer.css';
 
 pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
 const BASE_WIDTH = 720;
-const COLORS = ['#f6d44d', '#a9d16c', '#f2a9c0'];
+const COLORS = ['#f7e59b', '#bfe6b4', '#f6bcd0', '#b7d6f2'];
 
 interface PendingSelection {
   page: number;
   rects: NRect[];
   quote: string;
-  /** Viewport coords for the floating toolbar. */
+  /** Viewport coords for the floating popover. */
   x: number;
   y: number;
 }
 
-export default function Reader({ pdf, onBack }: { pdf: PdfDoc; onBack: () => void }) {
+export default function Reader({
+  pdf,
+  initialNoteId,
+  onBack,
+}: {
+  pdf: PdfDoc;
+  initialNoteId?: string | null;
+  onBack: () => void;
+}) {
   const [numPages, setNumPages] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [pending, setPending] = useState<PendingSelection | null>(null);
   const [openNoteId, setOpenNoteId] = useState<string | null>(null);
+  const [layout, setLayout] = useState<NotebookLayout>('twin');
+  const [overview, setOverview] = useState(false);
   const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const jumpedRef = useRef(false);
 
   const file = useMemo(() => pdf.data, [pdf.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -37,16 +49,27 @@ export default function Reader({ pdf, onBack }: { pdf: PdfDoc; onBack: () => voi
       [pdf.id],
     ) ?? [];
 
-  const sorted = [...annotations].sort(
-    (a, b) => a.page - b.page || (a.rects[0]?.y ?? 0) - (b.rects[0]?.y ?? 0),
-  );
   const byPage = new Map<number, Annotation[]>();
   for (const a of annotations) {
     byPage.set(a.page, [...(byPage.get(a.page) ?? []), a]);
   }
   const openAnnotation = annotations.find((a) => a.id === openNoteId) ?? null;
 
-  /** Capture the finished text selection and offer highlight/note actions. */
+  // Deep-link from the notes overview: open the notebook and scroll to its page.
+  useEffect(() => {
+    if (!initialNoteId || jumpedRef.current || numPages === 0) return;
+    const a = annotations.find((x) => x.id === initialNoteId);
+    if (!a) return;
+    jumpedRef.current = true;
+    setOpenNoteId(a.id);
+    const t = setTimeout(
+      () => pageRefs.current[a.page]?.scrollIntoView({ block: 'start' }),
+      450,
+    );
+    return () => clearTimeout(t);
+  }, [initialNoteId, numPages, annotations]);
+
+  /** Capture the finished text selection and offer highlight/comment/notebook. */
   function handleMouseUp() {
     // Let the browser finalize the selection first.
     setTimeout(() => {
@@ -87,7 +110,7 @@ export default function Reader({ pdf, onBack }: { pdf: PdfDoc; onBack: () => voi
     }, 10);
   }
 
-  async function commit(color: string, openNotebook: boolean) {
+  async function commit(color: string, opts: { openNotebook?: boolean; comment?: string } = {}) {
     if (!pending) return;
     const id = crypto.randomUUID();
     await db.annotations.add({
@@ -98,11 +121,19 @@ export default function Reader({ pdf, onBack }: { pdf: PdfDoc; onBack: () => voi
       color,
       quote: pending.quote,
       note: '',
+      comment: opts.comment ?? '',
+      strokes: [],
       createdAt: Date.now(),
     });
     window.getSelection()?.removeAllRanges();
     setPending(null);
-    if (openNotebook) setOpenNoteId(id);
+    if (opts.openNotebook) setOpenNoteId(id);
+  }
+
+  function commitComment() {
+    const text = window.prompt('Margin comment:', '');
+    if (text === null || !text.trim()) return;
+    commit(COLORS[0], { comment: text.trim() });
   }
 
   function jumpTo(a: Annotation) {
@@ -110,53 +141,47 @@ export default function Reader({ pdf, onBack }: { pdf: PdfDoc; onBack: () => voi
     pageRefs.current[a.page]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
+  const noteCount = annotations.length;
+
   return (
     <div className="reader">
-      <header className="reader-bar">
-        <button className="back-btn" onClick={onBack}>
-          ← Desk
+      <header className="rd-bar">
+        <button className="rd-back" onClick={onBack}>
+          ‹ Library
         </button>
-        <span className="mark">
-          Marginalia<span className="tail">.</span>
-        </span>
-        <span className="doc-title">{pdf.name}</span>
-        <div className="zoom">
-          <button onClick={() => setZoom((z) => Math.max(0.6, +(z - 0.15).toFixed(2)))}>−</button>
-          <span className="pct">{Math.round(zoom * 100)}%</span>
-          <button onClick={() => setZoom((z) => Math.min(2, +(z + 0.15).toFixed(2)))}>＋</button>
+        <div className="rd-sep" />
+        <div className="rd-doc">
+          <div className="rd-doc-t">{pdf.name}</div>
+          <div className="rd-doc-s">
+            {numPages ? `${numPages} page${numPages === 1 ? '' : 's'} · ` : ''}added{' '}
+            {new Date(pdf.addedAt).toLocaleDateString()}
+          </div>
+        </div>
+        <div className="rd-right">
+          <div className="zoom">
+            <button onClick={() => setZoom((z) => Math.max(0.6, +(z - 0.15).toFixed(2)))}>
+              −
+            </button>
+            <span className="pct">{Math.round(zoom * 100)}%</span>
+            <button onClick={() => setZoom((z) => Math.min(2, +(z + 0.15).toFixed(2)))}>
+              ＋
+            </button>
+          </div>
+          <div className="rd-sep" />
+          <button className="notes-btn" onClick={() => setOverview(true)}>
+            Notes ({noteCount})
+          </button>
         </div>
       </header>
 
-      <div className="reader-body">
-        <aside className="side">
-          <div className="side-head">
-            <span>Highlights</span>
-            <span>{annotations.length}</span>
-          </div>
-          {sorted.length === 0 && (
-            <p className="side-empty">
-              Select a passage in the document, pick a colour — or open a notebook page
-              right beside it.
-            </p>
-          )}
-          {sorted.map((a) => (
-            <button
-              key={a.id}
-              className={`side-item${a.id === openNoteId ? ' active' : ''}`}
-              onClick={() => jumpTo(a)}
-            >
-              <span className="q" style={{ ['--mark-color' as string]: a.color }}>
-                <mark>{a.quote}</mark>
-              </span>
-              <span className="m">
-                p. {a.page}
-                {a.note.trim() && <span className="noted"> · ✎ note</span>}
-              </span>
-            </button>
-          ))}
-        </aside>
-
-        <main className="pages" onMouseUp={handleMouseUp} onScroll={() => setPending(null)}>
+      <div className="stage">
+        <main
+          className={`pdf-pane paper-scroll${
+            openAnnotation && layout === 'twin' ? ' twin' : ''
+          }`}
+          onMouseUp={handleMouseUp}
+          onScroll={() => setPending(null)}
+        >
           <Document
             file={file}
             onLoadSuccess={({ numPages }) => setNumPages(numPages)}
@@ -189,31 +214,63 @@ export default function Reader({ pdf, onBack }: { pdf: PdfDoc; onBack: () => voi
           </Document>
         </main>
 
-        {openAnnotation && (
-          <NotebookPanel
-            key={openAnnotation.id}
-            annotation={openAnnotation}
-            onClose={() => setOpenNoteId(null)}
-          />
+        {openAnnotation && layout !== 'slideover' && (
+          <div className={layout === 'twin' ? 'nb-pane-twin' : 'nb-pane-dock'}>
+            <NotebookPanel
+              key={openAnnotation.id}
+              annotation={openAnnotation}
+              layout={layout}
+              setLayout={setLayout}
+              onClose={() => setOpenNoteId(null)}
+            />
+          </div>
+        )}
+        {openAnnotation && layout === 'slideover' && (
+          <div className="nb-overlay">
+            <div className="nb-scrim" onClick={() => setOpenNoteId(null)} />
+            <NotebookPanel
+              key={openAnnotation.id}
+              annotation={openAnnotation}
+              layout={layout}
+              setLayout={setLayout}
+              onClose={() => setOpenNoteId(null)}
+              slide
+            />
+          </div>
         )}
       </div>
 
       {pending && (
-        <div className="seltool" style={{ left: pending.x, top: pending.y }}>
+        <div className="pop" style={{ left: pending.x, top: pending.y }}>
           {COLORS.map((c) => (
             <button
               key={c}
-              className="swatch"
+              className="pop-sw"
               style={{ background: c }}
               title="Highlight"
-              onClick={() => commit(c, false)}
+              onClick={() => commit(c)}
             />
           ))}
-          <span className="seltool-div" />
-          <button className="seltool-note" onClick={() => commit(COLORS[0], true)}>
-            ✎ Open notebook
+          <span className="pop-div" />
+          <button className="pop-ic" title="Margin comment" onClick={commitComment}>
+            💬
+          </button>
+          <button className="pop-nb" onClick={() => commit(COLORS[0], { openNotebook: true })}>
+            Notebook page ›
           </button>
         </div>
+      )}
+
+      {overview && (
+        <NotesOverview
+          scopePdfId={pdf.id}
+          title={pdf.name}
+          onClose={() => setOverview(false)}
+          onJump={(a) => {
+            setOverview(false);
+            jumpTo(a);
+          }}
+        />
       )}
     </div>
   );
@@ -242,7 +299,7 @@ function HighlightLayer({
               height: `${r.h * 100}%`,
               backgroundColor: a.color,
             }}
-            title={a.note.trim() ? a.note : 'Open notebook'}
+            title={a.note.trim() ? a.note : 'Open notebook page'}
             onClick={(e) => {
               e.stopPropagation();
               onPick(a.id);
@@ -251,7 +308,7 @@ function HighlightLayer({
         )),
       )}
       {anns
-        .filter((a) => a.note.trim())
+        .filter((a) => a.note.trim() || a.strokes.length > 0)
         .map((a) => {
           const last = a.rects[a.rects.length - 1];
           if (!last) return null;
@@ -260,10 +317,27 @@ function HighlightLayer({
               key={`dot-${a.id}`}
               className="hl-dot"
               style={{ left: `${(last.x + last.w) * 100}%`, top: `${last.y * 100}%` }}
-              title="This passage has a note"
+              title="This passage has a notebook page"
               onClick={() => onPick(a.id)}
             >
               ✎
+            </button>
+          );
+        })}
+      {anns
+        .filter((a) => a.comment.trim())
+        .map((a) => {
+          const first = a.rects[0];
+          if (!first) return null;
+          return (
+            <button
+              key={`cmt-${a.id}`}
+              className="cmt-dot"
+              style={{ left: 'calc(100% + 10px)', top: `${first.y * 100}%` }}
+              title={a.comment}
+              onClick={() => onPick(a.id)}
+            >
+              💬
             </button>
           );
         })}

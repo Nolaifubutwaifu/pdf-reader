@@ -1,16 +1,16 @@
 import type { Metadata } from 'next';
-import { Fraunces, Alegreya_Sans } from 'next/font/google';
+import { Cormorant_Garamond, Lora } from 'next/font/google';
 import './globals.css';
 
-const fraunces = Fraunces({
+const cormorant = Cormorant_Garamond({
   subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
   style: ['normal', 'italic'],
   variable: '--font-display',
 });
 
-const alegreya = Alegreya_Sans({
+const lora = Lora({
   subsets: ['latin'],
-  weight: ['400', '500', '700'],
   style: ['normal', 'italic'],
   variable: '--font-body',
 });
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${fraunces.variable} ${alegreya.variable}`}>
+    <html lang="en" className={`${cormorant.variable} ${lora.variable}`}>
       <body>{children}</body>
     </html>
   );
