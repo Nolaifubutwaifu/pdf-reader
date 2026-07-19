@@ -137,6 +137,19 @@ export default function Library({
 
   return (
     <div className="lib paper-scroll">
+      {/* Shared taiga chrome — identical across every subdomain. */}
+      <div className="taiga-header">
+        <div className="taiga-brand">
+          <a className="wordmark" href="https://www.taigaprojects.space">
+            taiga
+          </a>
+          <span className="rule" />
+          <span className="crumb">/ pdf-reader</span>
+        </div>
+        <a className="taiga-back" href="https://www.taigaprojects.space">
+          ← all projects
+        </a>
+      </div>
       <div
         className={`lib-inner${drag ? ' drag' : ''}`}
         onDragOver={(e) => {
