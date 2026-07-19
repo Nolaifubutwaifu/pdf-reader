@@ -16,26 +16,47 @@ export default function AuthGate({
 }) {
   const [session, setSession] = useState<Session | null>(null);
   const [ready, setReady] = useState(false);
+  const [callbackError, setCallbackError] = useState('');
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const hadCode = params.has('code');
+    const errText = params.get('error_description') ?? hash.get('error_description');
+
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setReady(true);
-      // Strip ?code=… from the URL once it has been exchanged.
-      if (window.location.search.includes('code=')) {
+
+      if (errText) {
+        setCallbackError(errText);
+      } else if (hadCode && !data.session) {
+        // The link was opened somewhere other than the browser that asked for
+        // it, so the PKCE verifier is missing and the code cannot be redeemed.
+        setCallbackError(
+          'That sign-in link could not be completed here. Links only work in the ' +
+            'same browser that requested them — ask for a new one below.',
+        );
+      }
+      // Clean the callback params out of the address bar either way.
+      if (hadCode || errText) {
         window.history.replaceState({}, '', window.location.pathname);
       }
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+      setSession(s);
+      if (s) setCallbackError('');
+    });
     return () => sub.subscription.unsubscribe();
   }, []);
 
   if (!ready) return <div className="boot">Unlocking the desk…</div>;
-  if (!session) return <SignIn />;
+  if (!session) return <SignIn callbackError={callbackError} />;
   return <>{children(session)}</>;
 }
 
-function SignIn() {
+function SignIn({ callbackError }: { callbackError?: string }) {
   const [email, setEmail] = useState('');
   const [state, setState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [message, setMessage] = useState('');
@@ -80,6 +101,7 @@ function SignIn() {
           </div>
         ) : (
           <form className="auth-form" onSubmit={send}>
+            {callbackError && <p className="auth-error">{callbackError}</p>}
             <label className="auth-label" htmlFor="email">
               Email address
             </label>
