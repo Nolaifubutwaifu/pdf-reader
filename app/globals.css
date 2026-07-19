@@ -1222,6 +1222,25 @@ button {
   margin-top: 2px;
 }
 
+.env-list {
+  margin: 0 0 16px;
+  padding-left: 20px;
+  color: var(--ink2);
+  font-size: 14.5px;
+  line-height: 1.9;
+}
+
+.env-list code,
+.auth-fine code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 13px;
+  background: var(--quote-bg);
+  border: 1px solid rgba(182, 130, 53, 0.3);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-style: normal;
+}
+
 /* ————— Account row, banners, status ————— */
 .acct-row {
   display: flex;

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
+import { missingEnvVars, supabase, supabaseConfigured } from '@/lib/supabase';
 
 /**
  * Holds the session and renders the sign-in screen until there is one.
@@ -19,6 +19,10 @@ export default function AuthGate({
   const [callbackError, setCallbackError] = useState('');
 
   useEffect(() => {
+    if (!supabaseConfigured) {
+      setReady(true);
+      return;
+    }
     const params = new URLSearchParams(window.location.search);
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     const hadCode = params.has('code');
@@ -51,9 +55,38 @@ export default function AuthGate({
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  if (!supabaseConfigured) return <NotConfigured />;
   if (!ready) return <div className="boot">Unlocking the desk…</div>;
   if (!session) return <SignIn callbackError={callbackError} />;
   return <>{children(session)}</>;
+}
+
+/** Shown when the build has no Supabase credentials — most often a deployment
+ *  where the environment variables were never set. */
+function NotConfigured() {
+  return (
+    <div className="auth-root">
+      <div className="auth-card">
+        <div className="kicker">Not configured</div>
+        <h1 className="auth-title">Marginalia</h1>
+        <p className="auth-desc">
+          This build has no Supabase credentials, so it can&rsquo;t reach your documents.
+          Set the following in the hosting environment and redeploy:
+        </p>
+        <ul className="env-list">
+          {missingEnvVars.map((v) => (
+            <li key={v}>
+              <code>{v}</code>
+            </li>
+          ))}
+        </ul>
+        <p className="auth-fine">
+          Locally these live in <code>.env.local</code>; on Vercel they belong in the
+          project&rsquo;s Environment Variables. They must be present at build time.
+        </p>
+      </div>
+    </div>
+  );
 }
 
 function SignIn({ callbackError }: { callbackError?: string }) {
