@@ -1,9 +1,16 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db, type Annotation, type NRect, type PdfDoc } from '@/lib/db';
+import {
+  createAnnotation,
+  deleteAnnotation,
+  getDocumentBlob,
+  listAnnotations,
+  setPageCount,
+  updateAnnotation,
+} from '@/lib/data';
+import type { AnnotationRow, DocumentRow, NRect } from '@/lib/types';
 import { cleanSelectionRects } from '@/lib/rects';
 import NotebookPanel, { type NotebookLayout } from './NotebookPanel';
 import NotesOverview from './NotesOverview';
@@ -24,14 +31,17 @@ interface PendingSelection {
 }
 
 export default function Reader({
-  pdf,
+  doc,
   initialNoteId,
   onBack,
 }: {
-  pdf: PdfDoc;
+  doc: DocumentRow;
   initialNoteId?: string | null;
   onBack: () => void;
 }) {
+  const [blob, setBlob] = useState<Blob | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const [annotations, setAnnotations] = useState<AnnotationRow[]>([]);
   const [numPages, setNumPages] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [pending, setPending] = useState<PendingSelection | null>(null);
@@ -41,15 +51,22 @@ export default function Reader({
   const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const jumpedRef = useRef(false);
 
-  const file = useMemo(() => pdf.data, [pdf.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Fetch the file (cache-first) and its annotations.
+  useEffect(() => {
+    let alive = true;
+    setBlob(null);
+    getDocumentBlob(doc)
+      .then((b) => alive && setBlob(b))
+      .catch((e) => alive && setLoadError(e instanceof Error ? e.message : String(e)));
+    listAnnotations(doc.id)
+      .then((a) => alive && setAnnotations(a))
+      .catch((e) => alive && setLoadError(e instanceof Error ? e.message : String(e)));
+    return () => {
+      alive = false;
+    };
+  }, [doc]);
 
-  const annotations =
-    useLiveQuery(
-      () => db.annotations.where('pdfId').equals(pdf.id).toArray(),
-      [pdf.id],
-    ) ?? [];
-
-  const byPage = new Map<number, Annotation[]>();
+  const byPage = new Map<number, AnnotationRow[]>();
   for (const a of annotations) {
     byPage.set(a.page, [...(byPage.get(a.page) ?? []), a]);
   }
@@ -68,6 +85,11 @@ export default function Reader({
     );
     return () => clearTimeout(t);
   }, [initialNoteId, numPages, annotations]);
+
+  /** Locally mirror a server-side change so the UI stays responsive. */
+  const patchLocal = useCallback((id: string, patch: Partial<AnnotationRow>) => {
+    setAnnotations((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+  }, []);
 
   /** Capture the finished text selection and offer highlight/comment/notebook. */
   function handleMouseUp() {
@@ -112,36 +134,60 @@ export default function Reader({
 
   async function commit(color: string, opts: { openNotebook?: boolean; comment?: string } = {}) {
     if (!pending) return;
-    const id = crypto.randomUUID();
-    await db.annotations.add({
-      id,
-      pdfId: pdf.id,
-      page: pending.page,
-      rects: pending.rects,
-      color,
-      quote: pending.quote,
-      note: '',
-      comment: opts.comment ?? '',
-      strokes: [],
-      createdAt: Date.now(),
-    });
+    const snapshot = pending;
     window.getSelection()?.removeAllRanges();
     setPending(null);
-    if (opts.openNotebook) setOpenNoteId(id);
+    try {
+      const row = await createAnnotation({
+        documentId: doc.id,
+        page: snapshot.page,
+        rects: snapshot.rects,
+        color,
+        quote: snapshot.quote,
+        comment: opts.comment ?? '',
+      });
+      setAnnotations((prev) => [...prev, row]);
+      if (opts.openNotebook) setOpenNoteId(row.id);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : String(e));
+    }
   }
 
   function commitComment() {
     const text = window.prompt('Margin comment:', '');
     if (text === null || !text.trim()) return;
-    commit(COLORS[0], { comment: text.trim() });
+    void commit(COLORS[0], { comment: text.trim() });
   }
 
-  function jumpTo(a: Annotation) {
+  async function removeAnnotation(id: string) {
+    if (!confirm('Remove this highlight and its notebook page?')) return;
+    await deleteAnnotation(id);
+    setAnnotations((prev) => prev.filter((a) => a.id !== id));
+    setOpenNoteId(null);
+  }
+
+  async function saveAnnotation(id: string, patch: Partial<AnnotationRow>) {
+    patchLocal(id, patch);
+    await updateAnnotation(id, patch);
+  }
+
+  function jumpTo(a: AnnotationRow) {
     setOpenNoteId(a.id);
     pageRefs.current[a.page]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  const noteCount = annotations.length;
+  const notebook = openAnnotation && (
+    <NotebookPanel
+      key={openAnnotation.id}
+      annotation={openAnnotation}
+      layout={layout}
+      setLayout={setLayout}
+      onSave={saveAnnotation}
+      onDelete={removeAnnotation}
+      onClose={() => setOpenNoteId(null)}
+      slide={layout === 'slideover'}
+    />
+  );
 
   return (
     <div className="reader">
@@ -151,10 +197,10 @@ export default function Reader({
         </button>
         <div className="rd-sep" />
         <div className="rd-doc">
-          <div className="rd-doc-t">{pdf.name}</div>
+          <div className="rd-doc-t">{doc.name}</div>
           <div className="rd-doc-s">
             {numPages ? `${numPages} page${numPages === 1 ? '' : 's'} · ` : ''}added{' '}
-            {new Date(pdf.addedAt).toLocaleDateString()}
+            {new Date(doc.added_at).toLocaleDateString()}
           </div>
         </div>
         <div className="rd-right">
@@ -169,10 +215,17 @@ export default function Reader({
           </div>
           <div className="rd-sep" />
           <button className="notes-btn" onClick={() => setOverview(true)}>
-            Notes ({noteCount})
+            Notes ({annotations.length})
           </button>
         </div>
       </header>
+
+      {loadError && (
+        <div className="err-bar">
+          {loadError}
+          <button onClick={() => setLoadError('')}>✕</button>
+        </div>
+      )}
 
       <div className="stage">
         <main
@@ -182,60 +235,51 @@ export default function Reader({
           onMouseUp={handleMouseUp}
           onScroll={() => setPending(null)}
         >
-          <Document
-            file={file}
-            onLoadSuccess={({ numPages }) => setNumPages(numPages)}
-            loading={<div className="doc-loading">Opening document…</div>}
-            error={<div className="doc-loading">This file could not be read as a PDF.</div>}
-          >
-            {Array.from({ length: numPages }, (_, i) => i + 1).map((n) => (
-              <div
-                key={n}
-                data-page-wrap={n}
-                className="page-wrap"
-                ref={(el) => {
-                  pageRefs.current[n] = el;
-                }}
-              >
-                <Page
-                  pageNumber={n}
-                  width={BASE_WIDTH * zoom}
-                  renderAnnotationLayer={false}
-                  renderTextLayer
-                />
-                <HighlightLayer
-                  anns={byPage.get(n) ?? []}
-                  activeId={openNoteId}
-                  onPick={setOpenNoteId}
-                />
-                <span className="folio">— {n} —</span>
-              </div>
-            ))}
-          </Document>
+          {!blob && !loadError && <div className="doc-loading">Fetching the document…</div>}
+          {blob && (
+            <Document
+              file={blob}
+              onLoadSuccess={({ numPages }) => {
+                setNumPages(numPages);
+                if (doc.page_count !== numPages) void setPageCount(doc.id, numPages);
+              }}
+              loading={<div className="doc-loading">Opening document…</div>}
+              error={<div className="doc-loading">This file could not be read as a PDF.</div>}
+            >
+              {Array.from({ length: numPages }, (_, i) => i + 1).map((n) => (
+                <div
+                  key={n}
+                  data-page-wrap={n}
+                  className="page-wrap"
+                  ref={(el) => {
+                    pageRefs.current[n] = el;
+                  }}
+                >
+                  <Page
+                    pageNumber={n}
+                    width={BASE_WIDTH * zoom}
+                    renderAnnotationLayer={false}
+                    renderTextLayer
+                  />
+                  <HighlightLayer
+                    anns={byPage.get(n) ?? []}
+                    activeId={openNoteId}
+                    onPick={setOpenNoteId}
+                  />
+                  <span className="folio">— {n} —</span>
+                </div>
+              ))}
+            </Document>
+          )}
         </main>
 
         {openAnnotation && layout !== 'slideover' && (
-          <div className={layout === 'twin' ? 'nb-pane-twin' : 'nb-pane-dock'}>
-            <NotebookPanel
-              key={openAnnotation.id}
-              annotation={openAnnotation}
-              layout={layout}
-              setLayout={setLayout}
-              onClose={() => setOpenNoteId(null)}
-            />
-          </div>
+          <div className={layout === 'twin' ? 'nb-pane-twin' : 'nb-pane-dock'}>{notebook}</div>
         )}
         {openAnnotation && layout === 'slideover' && (
           <div className="nb-overlay">
             <div className="nb-scrim" onClick={() => setOpenNoteId(null)} />
-            <NotebookPanel
-              key={openAnnotation.id}
-              annotation={openAnnotation}
-              layout={layout}
-              setLayout={setLayout}
-              onClose={() => setOpenNoteId(null)}
-              slide
-            />
+            {notebook}
           </div>
         )}
       </div>
@@ -248,14 +292,17 @@ export default function Reader({
               className="pop-sw"
               style={{ background: c }}
               title="Highlight"
-              onClick={() => commit(c)}
+              onClick={() => void commit(c)}
             />
           ))}
           <span className="pop-div" />
           <button className="pop-ic" title="Margin comment" onClick={commitComment}>
             💬
           </button>
-          <button className="pop-nb" onClick={() => commit(COLORS[0], { openNotebook: true })}>
+          <button
+            className="pop-nb"
+            onClick={() => void commit(COLORS[0], { openNotebook: true })}
+          >
             Notebook page ›
           </button>
         </div>
@@ -263,12 +310,13 @@ export default function Reader({
 
       {overview && (
         <NotesOverview
-          scopePdfId={pdf.id}
-          title={pdf.name}
+          scopeDocumentId={doc.id}
+          title={doc.name}
           onClose={() => setOverview(false)}
           onJump={(a) => {
             setOverview(false);
-            jumpTo(a);
+            const local = annotations.find((x) => x.id === a.id);
+            if (local) jumpTo(local);
           }}
         />
       )}
@@ -281,7 +329,7 @@ function HighlightLayer({
   activeId,
   onPick,
 }: {
-  anns: Annotation[];
+  anns: AnnotationRow[];
   activeId: string | null;
   onPick: (id: string) => void;
 }) {

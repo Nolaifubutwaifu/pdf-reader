@@ -1,7 +1,8 @@
 'use client';
 
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db, type Annotation } from '@/lib/db';
+import { useEffect, useState } from 'react';
+import { listAllAnnotations, listAnnotations, listDocuments } from '@/lib/data';
+import type { AnnotationRow, DocumentRow } from '@/lib/types';
 
 /**
  * Slide-over drawer listing every notebook entry — scoped to one document in
@@ -9,30 +10,41 @@ import { db, type Annotation } from '@/lib/db';
  * Markdown or a formatted PDF.
  */
 export default function NotesOverview({
-  scopePdfId,
+  scopeDocumentId,
   title,
   onClose,
   onJump,
 }: {
-  scopePdfId?: string;
+  scopeDocumentId?: string;
   title: string;
   onClose: () => void;
-  onJump: (a: Annotation) => void;
+  onJump: (a: AnnotationRow) => void;
 }) {
-  const anns =
-    useLiveQuery(
-      () =>
-        scopePdfId
-          ? db.annotations.where('pdfId').equals(scopePdfId).toArray()
-          : db.annotations.toArray(),
-      [scopePdfId],
-    ) ?? [];
-  const pdfs = useLiveQuery(() => db.pdfs.toArray(), []) ?? [];
+  const [anns, setAnns] = useState<AnnotationRow[]>([]);
+  const [docs, setDocs] = useState<DocumentRow[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const nameOf = (id: string) => pdfs.find((p) => p.id === id)?.name ?? 'Untitled';
+  useEffect(() => {
+    let alive = true;
+    Promise.all([
+      scopeDocumentId ? listAnnotations(scopeDocumentId) : listAllAnnotations(),
+      listDocuments(),
+    ])
+      .then(([a, d]) => {
+        if (!alive) return;
+        setAnns(a);
+        setDocs(d);
+      })
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [scopeDocumentId]);
+
+  const nameOf = (id: string) => docs.find((d) => d.id === id)?.name ?? 'Untitled';
   const sorted = [...anns].sort(
     (a, b) =>
-      nameOf(a.pdfId).localeCompare(nameOf(b.pdfId)) ||
+      nameOf(a.document_id).localeCompare(nameOf(b.document_id)) ||
       a.page - b.page ||
       (a.rects[0]?.y ?? 0) - (b.rects[0]?.y ?? 0),
   );
@@ -41,7 +53,7 @@ export default function NotesOverview({
     let md = '# Marginalia — Notebook Export\n\n';
     let currentDoc = '';
     for (const a of sorted) {
-      const doc = nameOf(a.pdfId);
+      const doc = nameOf(a.document_id);
       if (doc !== currentDoc) {
         md += `## ${doc}\n\n`;
         currentDoc = doc;
@@ -65,10 +77,7 @@ export default function NotesOverview({
   }
 
   function exportMd() {
-    download(
-      'marginalia-notebook.md',
-      new Blob([buildMd()], { type: 'text/markdown' }),
-    );
+    download('marginalia-notebook.md', new Blob([buildMd()], { type: 'text/markdown' }));
   }
 
   async function exportPdf() {
@@ -125,7 +134,7 @@ export default function NotesOverview({
     y -= 10;
     let currentDoc = '';
     for (const a of sorted) {
-      const docName = nameOf(a.pdfId);
+      const docName = nameOf(a.document_id);
       if (docName !== currentDoc) {
         y -= 8;
         ensure(40);
@@ -171,7 +180,8 @@ export default function NotesOverview({
           </div>
         </div>
         <div className="ov-body">
-          {sorted.length === 0 && (
+          {loading && <div className="ov-empty">Gathering your notes…</div>}
+          {!loading && sorted.length === 0 && (
             <div className="ov-empty">
               No notes yet. Highlight a passage and open a notebook page to begin.
             </div>
@@ -180,7 +190,7 @@ export default function NotesOverview({
             <button key={a.id} className="ov-card" onClick={() => onJump(a)}>
               <span className="ov-meta">
                 <span className="ov-chip" style={{ background: a.color }} />
-                <span className="ov-doc">{nameOf(a.pdfId)}</span>
+                <span className="ov-doc">{nameOf(a.document_id)}</span>
                 <span>· p. {a.page}</span>
                 {a.strokes.length > 0 && <span className="ov-sketch">✐ sketch</span>}
               </span>

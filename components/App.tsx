@@ -1,39 +1,38 @@
 'use client';
 
 import { useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '@/lib/db';
+import type { Session } from '@supabase/supabase-js';
+import type { DocumentRow } from '@/lib/types';
+import { touchDocument } from '@/lib/data';
+import AuthGate from './AuthGate';
 import Library from './Library';
 import Reader from './Reader';
 
 export default function App() {
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [jumpNoteId, setJumpNoteId] = useState<string | null>(null);
-  const pdf = useLiveQuery(
-    () => (openId ? db.pdfs.get(openId) : undefined),
-    [openId],
-  );
+  return <AuthGate>{(session) => <Shell session={session} />}</AuthGate>;
+}
 
-  function open(id: string, noteId?: string) {
+function Shell({ session }: { session: Session }) {
+  const [doc, setDoc] = useState<DocumentRow | null>(null);
+  const [jumpNoteId, setJumpNoteId] = useState<string | null>(null);
+
+  function open(next: DocumentRow, noteId?: string) {
     setJumpNoteId(noteId ?? null);
-    setOpenId(id);
-    db.pdfs.update(id, { lastOpenedAt: Date.now() });
+    setDoc(next);
+    void touchDocument(next.id);
   }
 
-  if (openId && pdf) {
+  if (doc) {
     return (
       <Reader
-        pdf={pdf}
+        doc={doc}
         initialNoteId={jumpNoteId}
         onBack={() => {
-          setOpenId(null);
+          setDoc(null);
           setJumpNoteId(null);
         }}
       />
     );
   }
-  if (openId && !pdf) {
-    return <div className="boot">Fetching from the shelf…</div>;
-  }
-  return <Library onOpen={open} />;
+  return <Library session={session} onOpen={open} />;
 }

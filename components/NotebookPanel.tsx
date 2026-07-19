@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { db, type Annotation, type Stroke } from '@/lib/db';
+import type { AnnotationRow, Stroke } from '@/lib/types';
 
 export type NotebookLayout = 'twin' | 'docked' | 'slideover';
 
@@ -15,23 +15,27 @@ const LAYOUTS: { id: NotebookLayout; icon: string; label: string }[] = [
 
 /**
  * A blank notebook page beside the document, bound to one highlighted
- * passage. Type or draw; autosaves as you go.
+ * passage. Type or draw; saves to your account as you go.
  */
 export default function NotebookPanel({
   annotation,
   layout,
   setLayout,
+  onSave,
+  onDelete,
   onClose,
   slide,
 }: {
-  annotation: Annotation;
+  annotation: AnnotationRow;
   layout: NotebookLayout;
   setLayout: (l: NotebookLayout) => void;
+  onSave: (id: string, patch: Partial<AnnotationRow>) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
   onClose: () => void;
   slide?: boolean;
 }) {
   const [text, setText] = useState(annotation.note);
-  const [status, setStatus] = useState('Auto-saved');
+  const [status, setStatus] = useState('Saved to your account');
   const [penActive, setPenActive] = useState(false);
   const [penColor, setPenColor] = useState(PENS[0]);
   const areaRef = useRef<HTMLTextAreaElement>(null);
@@ -40,29 +44,33 @@ export default function NotebookPanel({
   const strokesRef = useRef<Stroke[]>(annotation.strokes ?? []);
   const drawingRef = useRef(false);
   const lastPtRef = useRef<{ x: number; y: number } | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     areaRef.current?.focus();
   }, []);
+
+  function flashSaved() {
+    setStatus('Saved ✓');
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setStatus('Saved to your account'), 1400);
+  }
 
   // Debounced note autosave.
   useEffect(() => {
     if (text === annotation.note) return;
     setStatus('writing…');
     const t = setTimeout(async () => {
-      await db.annotations.update(annotation.id, { note: text });
-      flashSaved();
-    }, 400);
+      try {
+        await onSave(annotation.id, { note: text });
+        flashSaved();
+      } catch (e) {
+        setStatus(e instanceof Error ? `Not saved — ${e.message}` : 'Not saved');
+      }
+    }, 500);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, annotation.id]);
-
-  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  function flashSaved() {
-    setStatus('Saved ✓');
-    if (flashTimer.current) clearTimeout(flashTimer.current);
-    flashTimer.current = setTimeout(() => setStatus('Auto-saved'), 1200);
-  }
 
   // Canvas sizing + redraw of persisted strokes (normalized coords).
   useEffect(() => {
@@ -139,28 +147,22 @@ export default function NotebookPanel({
   async function onPenUp() {
     if (!drawingRef.current) return;
     drawingRef.current = false;
-    await db.annotations.update(annotation.id, { strokes: strokesRef.current });
+    await onSave(annotation.id, { strokes: strokesRef.current });
     flashSaved();
   }
 
   async function clearCanvas() {
     strokesRef.current = [];
     redraw();
-    await db.annotations.update(annotation.id, { strokes: [] });
+    await onSave(annotation.id, { strokes: [] });
     flashSaved();
   }
 
   async function editComment() {
     const next = window.prompt('Margin comment:', annotation.comment);
     if (next === null) return;
-    await db.annotations.update(annotation.id, { comment: next.trim() });
+    await onSave(annotation.id, { comment: next.trim() });
     flashSaved();
-  }
-
-  async function removeAnnotation() {
-    if (!confirm('Remove this highlight and its notebook page?')) return;
-    await db.annotations.delete(annotation.id);
-    onClose();
   }
 
   return (
@@ -237,7 +239,11 @@ export default function NotebookPanel({
           </div>
         )}
         <span className="nb-saved">{status}</span>
-        <button className="nb-del" onClick={removeAnnotation} title="Delete highlight & note">
+        <button
+          className="nb-del"
+          onClick={() => onDelete(annotation.id)}
+          title="Delete highlight & note"
+        >
           Delete
         </button>
       </div>

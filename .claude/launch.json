@@ -4,9 +4,9 @@
     {
       "name": "marginalia-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 3000,
-      "autoPort": true
+      "runtimeArgs": ["run", "dev", "--", "--port", "3100"],
+      "port": 3100,
+      "autoPort": false
     }
   ]
 }

@@ -1112,6 +1112,215 @@ button {
   padding: 8px 10px;
 }
 
+/* ————— Sign in ————— */
+.auth-root {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+
+.auth-card {
+  width: min(460px, 100%);
+  background: var(--chrome);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 18px 50px rgba(32, 31, 29, 0.18);
+  padding: 40px 38px 34px;
+}
+
+.auth-title {
+  font-family: var(--font-d);
+  font-weight: 600;
+  font-size: 46px;
+  line-height: 1;
+  margin: 0 0 14px;
+  letter-spacing: -0.02em;
+}
+
+.auth-desc {
+  color: var(--ink-55);
+  font-size: 15px;
+  line-height: 1.55;
+  margin: 0 0 28px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auth-label {
+  font-family: var(--font-d);
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.auth-input {
+  font-family: var(--font-b);
+  font-size: 16px;
+  padding: 11px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--page);
+  color: var(--ink);
+  outline: none;
+}
+
+.auth-input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px var(--gold-soft);
+}
+
+.auth-submit {
+  margin-top: 8px;
+  width: 100%;
+  font-size: 16px;
+}
+
+.auth-submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.auth-fine {
+  font-size: 12.5px;
+  color: var(--ink-40);
+  font-style: italic;
+  margin: 6px 0 0;
+}
+
+.auth-error {
+  font-size: 13.5px;
+  color: #a03b3b;
+  margin: 6px 0 0;
+}
+
+.auth-sent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--quote-bg);
+  border-left: 3px solid var(--gold);
+  padding: 16px 18px;
+  border-radius: 4px;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink2);
+}
+
+.auth-sent strong {
+  font-family: var(--font-d);
+  font-size: 17px;
+}
+
+.auth-sent .sample-link {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+/* ————— Account row, banners, status ————— */
+.acct-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--ink-50);
+}
+
+.acct-mail {
+  font-style: italic;
+}
+
+.acct-out {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-b);
+  font-size: 13px;
+  color: var(--gold);
+  text-decoration: underline dotted;
+}
+
+.acct-out:hover {
+  color: #a37329;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  background: var(--quote-bg);
+  border: 1px solid rgba(182, 130, 53, 0.3);
+  border-left: 3px solid var(--gold);
+  border-radius: 5px;
+  padding: 16px 20px;
+  margin-bottom: 22px;
+}
+
+.banner > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 260px;
+}
+
+.banner strong {
+  font-family: var(--font-d);
+  font-size: 17px;
+}
+
+.banner span {
+  font-size: 14px;
+  color: var(--ink-55);
+  line-height: 1.5;
+}
+
+.banner-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.banner-actions .cbtn {
+  font-size: 14px;
+  padding: 8px 16px;
+}
+
+.err-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #f7e7e4;
+  border: 1px solid rgba(160, 59, 59, 0.35);
+  border-radius: 5px;
+  padding: 11px 14px;
+  margin-bottom: 18px;
+  font-size: 14px;
+  color: #7d2b2b;
+}
+
+.err-bar button {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 15px;
+  padding: 0 4px;
+}
+
+.busy-bar {
+  font-size: 13.5px;
+  font-style: italic;
+  color: var(--gold);
+  margin-bottom: 16px;
+}
+
 /* pdf.js text layer sits above the canvas for selection */
 .react-pdf__Page {
   position: relative;
