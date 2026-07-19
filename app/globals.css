@@ -1,26 +1,40 @@
 @import "tailwindcss";
 
-/* ————— Marginalia design tokens (matched to the Claude Design comp) ————— */
+/* ————— Marginalia design tokens —————
+   Retuned to the shared Taiga "Golden Hour" palette so this subdomain
+   matches taigaprojects.space. Token NAMES are unchanged — the ~1300
+   lines below keep working; only the values moved onto the Taiga ramp.
+   Canonical values: taigaprojects.space/taiga-tokens.css              */
 :root {
-  --bg: #e7e3dc;
-  --stage: #ded9d1;
-  --chrome: #f3f2f2;
-  --page: #fbfaf7;
-  --nb-paper: #fdfcf9;
-  --quote-bg: #f6f1e6;
-  --cmt-bg: #fdf6e6;
-  --ink: #201f1d;
-  --ink2: #26241f;
-  --ink-55: rgba(32, 31, 29, 0.55);
-  --ink-50: rgba(32, 31, 29, 0.5);
-  --ink-40: rgba(32, 31, 29, 0.4);
-  --line: rgba(32, 31, 29, 0.14);
-  --line-strong: rgba(32, 31, 29, 0.2);
-  --gold: #b68235;
-  --gold-soft: rgba(182, 130, 53, 0.14);
-  --dark: #2d2b2b;
-  --font-d: var(--font-display), 'Cormorant Garamond', Georgia, serif;
-  --font-b: var(--font-body), 'Lora', Georgia, serif;
+  /* Taiga ramp, for reference within this file */
+  --taiga-ink-950: #17120e;
+  --taiga-ink-900: #221a12;
+  --taiga-ink-100: #ece2d4;
+  --taiga-paper: #fbf7f0;
+  --taiga-amber-500: #e07a3c;
+  --taiga-amber-700: #a8521f;
+
+  --bg: #ece2d4;      /* ink-100  — stage behind the page */
+  --stage: #ddcdb8;   /* ink-200  — sunken stage */
+  --chrome: #ffffff;  /* surface  — bars and panels */
+  --page: #fbf7f0;    /* paper    — the document page */
+  --nb-paper: #ffffff;/* surface  — notebook leaf */
+  --quote-bg: #fbe4cf;/* amber-100 — accent-soft, pulled quotes */
+  --cmt-bg: #fbedcf;  /* honey-100 — comments */
+  --ink: #221a12;     /* ink-900  — text-primary */
+  --ink2: #2e2418;    /* ink-800 */
+  --ink-55: rgba(34, 26, 18, 0.55);
+  --ink-50: rgba(34, 26, 18, 0.5);
+  --ink-40: rgba(34, 26, 18, 0.4);
+  --line: rgba(34, 26, 18, 0.14);
+  --line-strong: rgba(34, 26, 18, 0.2);
+  --gold: #e07a3c;    /* amber-500 — the accent */
+  --gold-soft: rgba(224, 122, 60, 0.16);
+  --dark: #17120e;    /* ink-950  — inverse surface */
+  --font-d: var(--font-display), 'Libre Caslon Display', Georgia, serif;
+  --font-b: var(--font-body), 'Libre Caslon Text', Georgia, serif;
+  --font-ui: var(--font-ui-sans), 'Hanken Grotesk', system-ui, sans-serif;
+  --font-mono: var(--font-mono-code), 'JetBrains Mono', ui-monospace, Menlo, monospace;
 }
 
 * {
@@ -42,7 +56,7 @@ body {
 }
 
 ::selection {
-  background: rgba(182, 130, 53, 0.28);
+  background: rgba(224, 122, 60, 0.28);
 }
 
 button {
@@ -56,7 +70,7 @@ button {
 }
 
 .paper-scroll::-webkit-scrollbar-thumb {
-  background: rgba(32, 31, 29, 0.22);
+  background: rgba(34, 26, 18, 0.22);
   border-radius: 6px;
 }
 
@@ -108,7 +122,7 @@ button {
 }
 
 .cbtn:hover {
-  background: rgba(32, 31, 29, 0.05);
+  background: rgba(34, 26, 18, 0.05);
 }
 
 .cbtn.gold {
@@ -118,8 +132,8 @@ button {
 }
 
 .cbtn.gold:hover {
-  background: #a37329;
-  border-color: #a37329;
+  background: #c8642b;
+  border-color: #c8642b;
 }
 
 /* ————— Library ————— */
@@ -144,7 +158,7 @@ button {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  border-bottom: 1px solid rgba(32, 31, 29, 0.16);
+  border-bottom: 1px solid rgba(34, 26, 18, 0.16);
   padding-bottom: 22px;
   margin-bottom: 8px;
 }
@@ -192,7 +206,7 @@ button {
 }
 
 .sample-link:hover {
-  color: #a37329;
+  color: #c8642b;
 }
 
 .pills {
@@ -207,7 +221,7 @@ button {
   font-size: 14px;
   padding: 8px 18px;
   border-radius: 20px;
-  border: 1px solid rgba(32, 31, 29, 0.18);
+  border: 1px solid rgba(34, 26, 18, 0.18);
   background: transparent;
   color: var(--ink);
 }
@@ -243,13 +257,13 @@ button {
   border-radius: 3px;
   overflow: hidden;
   color: #f3ece0;
-  box-shadow: 0 8px 20px rgba(32, 31, 29, 0.2);
+  box-shadow: 0 8px 20px rgba(34, 26, 18, 0.2);
   transition: transform 0.22s, box-shadow 0.22s;
 }
 
 .cover-card:hover .cover {
   transform: translateY(-4px);
-  box-shadow: 0 16px 34px rgba(32, 31, 29, 0.32);
+  box-shadow: 0 16px 34px rgba(34, 26, 18, 0.32);
 }
 
 .spine {
@@ -355,7 +369,7 @@ button {
 
 .shelf-empty {
   grid-column: 1 / -1;
-  color: rgba(32, 31, 29, 0.45);
+  color: rgba(34, 26, 18, 0.45);
   font-style: italic;
   padding: 40px 0;
 }
@@ -467,7 +481,7 @@ button {
 }
 
 .notes-btn:hover {
-  background: rgba(32, 31, 29, 0.05);
+  background: rgba(34, 26, 18, 0.05);
 }
 
 /* ————— Stage & pages ————— */
@@ -496,7 +510,7 @@ button {
   width: fit-content;
   margin: 0 auto 32px;
   background: var(--page);
-  box-shadow: 0 8px 34px rgba(32, 31, 29, 0.16);
+  box-shadow: 0 8px 34px rgba(34, 26, 18, 0.16);
   border-radius: 2px;
 }
 
@@ -544,7 +558,7 @@ button {
 
 .hl.hl-active {
   opacity: 0.88;
-  outline: 1.5px solid rgba(182, 130, 53, 0.8);
+  outline: 1.5px solid rgba(224, 122, 60, 0.8);
   outline-offset: 1px;
 }
 
@@ -562,12 +576,12 @@ button {
   line-height: 1;
   display: grid;
   place-items: center;
-  box-shadow: 0 2px 6px rgba(32, 31, 29, 0.35);
+  box-shadow: 0 2px 6px rgba(34, 26, 18, 0.35);
   z-index: 6;
 }
 
 .hl-dot:hover {
-  background: #a37329;
+  background: #c8642b;
 }
 
 .cmt-dot {
@@ -659,7 +673,7 @@ button {
 }
 
 .pop-nb:hover {
-  background: #a37329;
+  background: #c8642b;
 }
 
 /* ————— Notebook panes ————— */
@@ -673,7 +687,7 @@ button {
   width: 420px;
   flex: none;
   display: flex;
-  box-shadow: -8px 0 24px rgba(32, 31, 29, 0.12);
+  box-shadow: -8px 0 24px rgba(34, 26, 18, 0.12);
 }
 
 .nb-overlay {
@@ -687,7 +701,7 @@ button {
 .nb-scrim {
   position: absolute;
   inset: 0;
-  background: rgba(32, 31, 29, 0.28);
+  background: rgba(34, 26, 18, 0.28);
   animation: fadeIn 0.2s;
 }
 
@@ -727,7 +741,7 @@ button {
 
 .lay-switch {
   display: flex;
-  border: 1px solid rgba(32, 31, 29, 0.18);
+  border: 1px solid rgba(34, 26, 18, 0.18);
   border-radius: 5px;
   overflow: hidden;
 }
@@ -742,7 +756,7 @@ button {
   border: none;
   border-right: 1px solid var(--line);
   background: transparent;
-  color: rgba(32, 31, 29, 0.6);
+  color: rgba(34, 26, 18, 0.6);
 }
 
 .lay-btn:last-child {
@@ -770,7 +784,7 @@ button {
 .nb-quote {
   padding: 16px 22px;
   background: var(--quote-bg);
-  border-bottom: 1px solid rgba(182, 130, 53, 0.25);
+  border-bottom: 1px solid rgba(224, 122, 60, 0.25);
   flex: none;
 }
 
@@ -805,7 +819,7 @@ button {
 .nb-cmt-chip {
   margin-top: 10px;
   font-size: 13px;
-  color: rgba(32, 31, 29, 0.6);
+  color: rgba(34, 26, 18, 0.6);
   background: var(--cmt-bg);
   border: none;
   border-radius: 4px;
@@ -842,8 +856,8 @@ button {
   background-image: repeating-linear-gradient(
     transparent 0,
     transparent 31px,
-    rgba(182, 130, 53, 0.18) 31px,
-    rgba(182, 130, 53, 0.18) 32px
+    rgba(224, 122, 60, 0.18) 31px,
+    rgba(224, 122, 60, 0.18) 32px
   );
   background-attachment: local;
   background-position-y: 8px;
@@ -856,7 +870,7 @@ button {
 }
 
 .nb-ta::placeholder {
-  color: rgba(32, 31, 29, 0.35);
+  color: rgba(34, 26, 18, 0.35);
   font-style: italic;
 }
 
@@ -893,7 +907,7 @@ button {
   font-size: 14px;
   padding: 7px 14px;
   border-radius: 5px;
-  border: 1px solid rgba(32, 31, 29, 0.18);
+  border: 1px solid rgba(34, 26, 18, 0.18);
   background: transparent;
   color: var(--ink);
 }
@@ -924,7 +938,7 @@ button {
   border: 1px solid var(--line-strong);
   border-radius: 4px;
   padding: 5px 9px;
-  color: rgba(32, 31, 29, 0.7);
+  color: rgba(34, 26, 18, 0.7);
   margin-left: 4px;
 }
 
@@ -932,7 +946,7 @@ button {
   background: none;
   border: none;
   font-size: 12px;
-  color: rgba(32, 31, 29, 0.45);
+  color: rgba(34, 26, 18, 0.45);
   padding: 5px 6px;
 }
 
@@ -1030,7 +1044,7 @@ button {
 .ov-empty {
   text-align: center;
   padding: 80px 20px;
-  color: rgba(32, 31, 29, 0.45);
+  color: rgba(34, 26, 18, 0.45);
   font-style: italic;
 }
 
@@ -1040,16 +1054,16 @@ button {
   text-align: left;
   font-family: var(--font-b);
   background: var(--page);
-  border: 1px solid rgba(32, 31, 29, 0.12);
+  border: 1px solid rgba(34, 26, 18, 0.12);
   border-radius: 6px;
   padding: 18px 20px;
   margin-bottom: 16px;
-  box-shadow: 0 1px 3px rgba(32, 31, 29, 0.06);
+  box-shadow: 0 1px 3px rgba(34, 26, 18, 0.06);
   transition: box-shadow 0.15s, transform 0.15s;
 }
 
 .ov-card:hover {
-  box-shadow: 0 6px 18px rgba(32, 31, 29, 0.14);
+  box-shadow: 0 6px 18px rgba(34, 26, 18, 0.14);
   transform: translateY(-1px);
 }
 
@@ -1099,14 +1113,14 @@ button {
 }
 
 .ov-note.faint {
-  color: rgba(32, 31, 29, 0.45);
+  color: rgba(34, 26, 18, 0.45);
   font-style: italic;
 }
 
 .ov-cmt {
   margin-top: 10px;
   font-size: 13px;
-  color: rgba(32, 31, 29, 0.6);
+  color: rgba(34, 26, 18, 0.6);
   background: var(--cmt-bg);
   border-radius: 4px;
   padding: 8px 10px;
@@ -1125,7 +1139,7 @@ button {
   background: var(--chrome);
   border: 1px solid var(--line);
   border-radius: 8px;
-  box-shadow: 0 18px 50px rgba(32, 31, 29, 0.18);
+  box-shadow: 0 18px 50px rgba(34, 26, 18, 0.18);
   padding: 40px 38px 34px;
 }
 
@@ -1266,7 +1280,7 @@ button {
 }
 
 .acct-out:hover {
-  color: #a37329;
+  color: #c8642b;
 }
 
 .banner {
@@ -1275,7 +1289,7 @@ button {
   gap: 20px;
   flex-wrap: wrap;
   background: var(--quote-bg);
-  border: 1px solid rgba(182, 130, 53, 0.3);
+  border: 1px solid rgba(224, 122, 60, 0.3);
   border-left: 3px solid var(--gold);
   border-radius: 5px;
   padding: 16px 20px;
@@ -1343,4 +1357,63 @@ button {
 /* pdf.js text layer sits above the canvas for selection */
 .react-pdf__Page {
   position: relative;
+}
+
+/* ————— Shared taiga chrome —————
+   The slim bar that ties every taigaprojects.space subdomain together.
+   Keep this block identical across projects.                          */
+.taiga-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  padding: 0 32px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+
+.taiga-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.taiga-brand .wordmark {
+  font-family: var(--font-d);
+  font-size: 25px;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.taiga-brand .rule {
+  width: 1px;
+  height: 20px;
+  background: var(--line-strong);
+  align-self: center;
+}
+
+.taiga-brand .crumb {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  color: var(--ink-55);
+}
+
+.taiga-back {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink-55);
+  text-decoration: none;
+  transition: color 220ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.taiga-back:hover {
+  color: var(--taiga-amber-700);
+}
+
+@media (max-width: 720px) {
+  .taiga-header {
+    padding: 0 20px;
+  }
 }
