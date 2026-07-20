@@ -17,7 +17,15 @@ import {
 import type { AnnotationRow, DocumentRow, NRect, PageMarks } from '@/lib/types';
 import { cleanSelectionRects } from '@/lib/rects';
 import { extractPdfText } from '@/lib/extract';
+import type { PDFDocumentProxy } from 'pdfjs-dist';
 import MarkupLayer, { type MarkTool } from './MarkupLayer';
+import {
+  OutlinePanel,
+  PageJump,
+  ThumbRail,
+  readOutline,
+  type OutlineEntry,
+} from './PageNav';
 import NotebookPanel, { type NotebookLayout } from './NotebookPanel';
 import NotesOverview from './NotesOverview';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -71,6 +79,16 @@ export default function Reader({
   const [markerColor, setMarkerColor] = useState(COLORS[0]);
   const [marksByPage, setMarksByPage] = useState<Record<number, PageMarks>>({});
   const [markStatus, setMarkStatus] = useState('');
+  // Virtualized rendering: only pages near the viewport get a real canvas.
+  const [visible, setVisible] = useState<Set<number>>(() => new Set([1, 2]));
+  const [ratios, setRatios] = useState<Record<number, number>>({});
+  const [defaultRatio, setDefaultRatio] = useState(1.4142); // A4 until measured
+  const [currentPage, setCurrentPage] = useState(1);
+  const [thumbsOpen, setThumbsOpen] = useState(false);
+  const [outline, setOutline] = useState<OutlineEntry[]>([]);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const paneRef = useRef<HTMLElement>(null);
+  const scrollRafRef = useRef<number | null>(null);
   const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const jumpedRef = useRef(false);
   const pageJumpedRef = useRef(false);
@@ -110,6 +128,82 @@ export default function Reader({
       }
     })();
   }, [blob, doc.id]);
+
+  /** On document load: page count, outline, and every page's aspect ratio so
+   *  unrendered pages hold exactly the right height. */
+  async function onDocLoad(pdf: PDFDocumentProxy) {
+    setNumPages(pdf.numPages);
+    if (doc.page_count !== pdf.numPages) void setPageCount(doc.id, pdf.numPages);
+    void readOutline(pdf).then(setOutline).catch(() => {});
+    try {
+      const dims: Record<number, number> = {};
+      for (let n = 1; n <= pdf.numPages; n++) {
+        const p = await pdf.getPage(n);
+        const v = p.getViewport({ scale: 1 });
+        dims[n] = v.height / v.width;
+        if (n === 1) setDefaultRatio(dims[1]);
+        if (n % 50 === 0) setRatios({ ...dims });
+      }
+      setRatios({ ...dims });
+    } catch {
+      // Placeholder heights fall back to the first page's ratio.
+    }
+  }
+
+  // Watch which pages are near the viewport; those are the ones we render.
+  useEffect(() => {
+    const pane = paneRef.current;
+    if (!pane || numPages === 0) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        setVisible((prev) => {
+          const next = new Set(prev);
+          let changed = false;
+          for (const e of entries) {
+            const n = Number((e.target as HTMLElement).dataset.pageWrap);
+            if (e.isIntersecting) {
+              if (!next.has(n)) {
+                next.add(n);
+                changed = true;
+              }
+            } else if (next.has(n)) {
+              next.delete(n);
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
+      },
+      { root: pane, rootMargin: '1400px 0px' },
+    );
+    pane.querySelectorAll('[data-page-wrap]').forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, [numPages]);
+
+  /** Track the topmost page in view (for the p. x / y indicator and thumbs). */
+  function handlePaneScroll() {
+    setPending(null);
+    if (scrollRafRef.current != null) return;
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      const pane = paneRef.current;
+      if (!pane) return;
+      const top = pane.getBoundingClientRect().top + 80;
+      let cur = 1;
+      for (let n = 1; n <= numPages; n++) {
+        const el = pageRefs.current[n];
+        if (!el) continue;
+        if (el.getBoundingClientRect().top <= top) cur = n;
+        else break;
+      }
+      setCurrentPage(cur);
+    });
+  }
+
+  function jumpToPage(n: number) {
+    pageRefs.current[n]?.scrollIntoView({ block: 'start' });
+    setCurrentPage(n);
+  }
 
   // Esc always drops back to reading.
   useEffect(() => {
@@ -287,6 +381,37 @@ export default function Reader({
           </div>
         </div>
         <div className="rd-right">
+          <button
+            className={`nav-btn${thumbsOpen ? ' on' : ''}`}
+            title="Page thumbnails"
+            onClick={() => setThumbsOpen((v) => !v)}
+          >
+            ⊞
+          </button>
+          {outline.length > 0 && (
+            <div className="outline-wrap">
+              <button
+                className={`nav-btn${outlineOpen ? ' on' : ''}`}
+                onClick={() => setOutlineOpen((v) => !v)}
+              >
+                ☰ Contents
+              </button>
+              {outlineOpen && (
+                <OutlinePanel
+                  outline={outline}
+                  onJump={(n) => {
+                    setOutlineOpen(false);
+                    jumpToPage(n);
+                  }}
+                  onClose={() => setOutlineOpen(false)}
+                />
+              )}
+            </div>
+          )}
+          {numPages > 0 && (
+            <PageJump current={currentPage} total={numPages} onJump={jumpToPage} />
+          )}
+          <div className="rd-sep" />
           <div className="zoom">
             <button onClick={() => setZoom((z) => Math.max(0.6, +(z - 0.15).toFixed(2)))}>
               −
@@ -358,57 +483,88 @@ export default function Reader({
       )}
 
       <div className="stage">
-        <main
-          className={`pdf-pane paper-scroll${
-            openAnnotation && layout === 'twin' ? ' twin' : ''
-          }${tool !== 'read' ? ' marking' : ''}`}
-          onMouseUp={handleMouseUp}
-          onScroll={() => setPending(null)}
-        >
-          {!blob && !loadError && <div className="doc-loading">Fetching the document…</div>}
-          {blob && (
-            <Document
-              file={blob}
-              onLoadSuccess={({ numPages }) => {
-                setNumPages(numPages);
-                if (doc.page_count !== numPages) void setPageCount(doc.id, numPages);
-              }}
-              loading={<div className="doc-loading">Opening document…</div>}
-              error={<div className="doc-loading">This file could not be read as a PDF.</div>}
+        {!blob && (
+          <main className="pdf-pane paper-scroll">
+            {!loadError && <div className="doc-loading">Fetching the document…</div>}
+          </main>
+        )}
+        {blob && (
+          <Document
+            file={blob}
+            className="doc-span"
+            onLoadSuccess={onDocLoad}
+            loading={
+              <main className="pdf-pane paper-scroll">
+                <div className="doc-loading">Opening document…</div>
+              </main>
+            }
+            error={
+              <main className="pdf-pane paper-scroll">
+                <div className="doc-loading">This file could not be read as a PDF.</div>
+              </main>
+            }
+          >
+            {thumbsOpen && numPages > 0 && (
+              <ThumbRail
+                numPages={numPages}
+                ratios={ratios}
+                defaultRatio={defaultRatio}
+                currentPage={currentPage}
+                onJump={jumpToPage}
+              />
+            )}
+            <main
+              ref={paneRef}
+              className={`pdf-pane paper-scroll${
+                openAnnotation && layout === 'twin' ? ' twin' : ''
+              }${tool !== 'read' ? ' marking' : ''}`}
+              onMouseUp={handleMouseUp}
+              onScroll={handlePaneScroll}
             >
-              {Array.from({ length: numPages }, (_, i) => i + 1).map((n) => (
-                <div
-                  key={n}
-                  data-page-wrap={n}
-                  className="page-wrap"
-                  ref={(el) => {
-                    pageRefs.current[n] = el;
-                  }}
-                >
-                  <Page
-                    pageNumber={n}
-                    width={BASE_WIDTH * zoom}
-                    renderAnnotationLayer={false}
-                    renderTextLayer
-                  />
-                  <HighlightLayer
-                    anns={byPage.get(n) ?? []}
-                    activeId={openNoteId}
-                    onPick={setOpenNoteId}
-                  />
-                  <MarkupLayer
-                    marks={marksByPage[n] ?? EMPTY_MARKS}
-                    tool={tool}
-                    inkColor={inkColor}
-                    markerColor={markerColor}
-                    onChange={(next) => updateMarks(n, next)}
-                  />
-                  <span className="folio">— {n} —</span>
-                </div>
-              ))}
-            </Document>
-          )}
-        </main>
+              {Array.from({ length: numPages }, (_, i) => i + 1).map((n) => {
+                const w = BASE_WIDTH * zoom;
+                const h = Math.round(w * (ratios[n] ?? defaultRatio));
+                return (
+                  <div
+                    key={n}
+                    data-page-wrap={n}
+                    className="page-wrap"
+                    ref={(el) => {
+                      pageRefs.current[n] = el;
+                    }}
+                  >
+                    {visible.has(n) ? (
+                      <>
+                        <Page
+                          pageNumber={n}
+                          width={w}
+                          renderAnnotationLayer={false}
+                          renderTextLayer
+                          loading={<div style={{ width: w, height: h }} />}
+                        />
+                        <HighlightLayer
+                          anns={byPage.get(n) ?? []}
+                          activeId={openNoteId}
+                          onPick={setOpenNoteId}
+                        />
+                        <MarkupLayer
+                          marks={marksByPage[n] ?? EMPTY_MARKS}
+                          tool={tool}
+                          inkColor={inkColor}
+                          markerColor={markerColor}
+                          onChange={(next) => updateMarks(n, next)}
+                        />
+                      </>
+                    ) : (
+                      <div style={{ width: w, height: h }} />
+                    )}
+                    <span className="folio">— {n} —</span>
+                  </div>
+                );
+              })}
+            </main>
+          </Document>
+        )}
 
         {openAnnotation && layout !== 'slideover' && (
           <div className={layout === 'twin' ? 'nb-pane-twin' : 'nb-pane-dock'}>{notebook}</div>
