@@ -214,6 +214,37 @@ export default function Reader({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  /** Anything worth burning into an exported copy? */
+  const hasInk =
+    annotations.length > 0 ||
+    Object.values(marksByPage).some((m) => m.strokes.length > 0 || m.texts.length > 0);
+
+  /** Download a copy of the PDF with all markup burned in, plus a notes appendix. */
+  async function downloadMarked() {
+    if (!blob) return;
+    setMarkStatus('Preparing marked copy…');
+    try {
+      const { exportAnnotatedPdf } = await import('@/lib/export-annotated');
+      const out = await exportAnnotatedPdf({
+        blob,
+        docName: doc.name,
+        annotations,
+        marks: marksByPage,
+      });
+      const url = URL.createObjectURL(out);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${doc.name.replace(/[/\\]/g, '-')} — annotated.pdf`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setMarkStatus('Downloaded ✓');
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = setTimeout(() => setMarkStatus(''), 2000);
+    } catch (e) {
+      setMarkStatus(e instanceof Error ? `Export failed — ${e.message}` : 'Export failed');
+    }
+  }
+
   /** Update one page's markup locally and persist it shortly after. */
   function updateMarks(page: number, next: PageMarks) {
     setMarksByPage((prev) => ({ ...prev, [page]: next }));
@@ -472,6 +503,14 @@ export default function Reader({
                 ? 'Click or drag over ink to remove it.'
                 : 'Draw straight onto the page — saved automatically. Esc to finish.'}
         </span>
+        <button
+          className="nav-btn export-marked"
+          title="Download a copy with highlights, ink, and notes burned in"
+          disabled={!hasInk || !blob}
+          onClick={downloadMarked}
+        >
+          ↧ Marked copy
+        </button>
         <span className="mark-status">{markStatus}</span>
       </div>
 

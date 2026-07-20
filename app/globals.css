@@ -793,11 +793,21 @@ button {
 }
 
 .mark-status {
-  margin-left: auto;
+  margin-left: 12px;
   font-size: 12.5px;
   font-style: italic;
   color: var(--gold);
   white-space: nowrap;
+}
+
+.export-marked {
+  margin-left: auto;
+  flex: none;
+}
+
+.export-marked:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .mk-layer {
