@@ -6,12 +6,18 @@ import {
   createAnnotation,
   deleteAnnotation,
   getDocumentBlob,
+  isIndexed,
   listAnnotations,
+  listPageMarks,
+  saveDocumentText,
+  savePageMarks,
   setPageCount,
   updateAnnotation,
 } from '@/lib/data';
-import type { AnnotationRow, DocumentRow, NRect } from '@/lib/types';
+import type { AnnotationRow, DocumentRow, NRect, PageMarks } from '@/lib/types';
 import { cleanSelectionRects } from '@/lib/rects';
+import { extractPdfText } from '@/lib/extract';
+import MarkupLayer, { type MarkTool } from './MarkupLayer';
 import NotebookPanel, { type NotebookLayout } from './NotebookPanel';
 import NotesOverview from './NotesOverview';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -20,6 +26,16 @@ pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
 const BASE_WIDTH = 720;
 const COLORS = ['#f7e59b', '#bfe6b4', '#f6bcd0', '#b7d6f2'];
+const INKS = ['#2d5a8c', '#b68235', '#a03b3b', '#2d2b2b'];
+const EMPTY_MARKS: PageMarks = { strokes: [], texts: [] };
+
+const TOOLS: { id: MarkTool; icon: string; label: string }[] = [
+  { id: 'read', icon: '⌖', label: 'Read & select' },
+  { id: 'pen', icon: '✎', label: 'Pen' },
+  { id: 'marker', icon: '▨', label: 'Marker' },
+  { id: 'text', icon: 'T', label: 'Text' },
+  { id: 'erase', icon: '⌫', label: 'Erase' },
+];
 
 interface PendingSelection {
   page: number;
@@ -33,10 +49,12 @@ interface PendingSelection {
 export default function Reader({
   doc,
   initialNoteId,
+  initialPage,
   onBack,
 }: {
   doc: DocumentRow;
   initialNoteId?: string | null;
+  initialPage?: number | null;
   onBack: () => void;
 }) {
   const [blob, setBlob] = useState<Blob | null>(null);
@@ -48,10 +66,19 @@ export default function Reader({
   const [openNoteId, setOpenNoteId] = useState<string | null>(null);
   const [layout, setLayout] = useState<NotebookLayout>('twin');
   const [overview, setOverview] = useState(false);
+  const [tool, setTool] = useState<MarkTool>('read');
+  const [inkColor, setInkColor] = useState(INKS[0]);
+  const [markerColor, setMarkerColor] = useState(COLORS[0]);
+  const [marksByPage, setMarksByPage] = useState<Record<number, PageMarks>>({});
+  const [markStatus, setMarkStatus] = useState('');
   const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const jumpedRef = useRef(false);
+  const pageJumpedRef = useRef(false);
+  const indexStartedRef = useRef(false);
+  const saveTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Fetch the file (cache-first) and its annotations.
+  // Fetch the file (cache-first), its annotations, and its page markup.
   useEffect(() => {
     let alive = true;
     setBlob(null);
@@ -61,10 +88,54 @@ export default function Reader({
     listAnnotations(doc.id)
       .then((a) => alive && setAnnotations(a))
       .catch((e) => alive && setLoadError(e instanceof Error ? e.message : String(e)));
+    listPageMarks(doc.id)
+      .then((m) => alive && setMarksByPage(m))
+      .catch((e) => alive && setLoadError(e instanceof Error ? e.message : String(e)));
     return () => {
       alive = false;
     };
   }, [doc]);
+
+  // Make the document searchable: extract page text once, in the background.
+  useEffect(() => {
+    if (!blob || indexStartedRef.current) return;
+    indexStartedRef.current = true;
+    (async () => {
+      try {
+        if (await isIndexed(doc.id)) return;
+        await saveDocumentText(doc.id, await extractPdfText(blob));
+      } catch {
+        // Search simply won't cover this document yet; retried on next open.
+        indexStartedRef.current = false;
+      }
+    })();
+  }, [blob, doc.id]);
+
+  // Esc always drops back to reading.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setTool('read');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  /** Update one page's markup locally and persist it shortly after. */
+  function updateMarks(page: number, next: PageMarks) {
+    setMarksByPage((prev) => ({ ...prev, [page]: next }));
+    setMarkStatus('Saving…');
+    clearTimeout(saveTimersRef.current[page]);
+    saveTimersRef.current[page] = setTimeout(async () => {
+      try {
+        await savePageMarks(doc.id, page, next);
+        setMarkStatus('Saved ✓');
+        if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+        statusTimerRef.current = setTimeout(() => setMarkStatus(''), 1500);
+      } catch (e) {
+        setMarkStatus(e instanceof Error ? `Not saved — ${e.message}` : 'Not saved');
+      }
+    }, 600);
+  }
 
   const byPage = new Map<number, AnnotationRow[]>();
   for (const a of annotations) {
@@ -86,6 +157,17 @@ export default function Reader({
     return () => clearTimeout(t);
   }, [initialNoteId, numPages, annotations]);
 
+  // Deep-link from search: scroll straight to the matched page.
+  useEffect(() => {
+    if (!initialPage || pageJumpedRef.current || numPages === 0) return;
+    pageJumpedRef.current = true;
+    const t = setTimeout(
+      () => pageRefs.current[initialPage]?.scrollIntoView({ block: 'start' }),
+      450,
+    );
+    return () => clearTimeout(t);
+  }, [initialPage, numPages]);
+
   /** Locally mirror a server-side change so the UI stays responsive. */
   const patchLocal = useCallback((id: string, patch: Partial<AnnotationRow>) => {
     setAnnotations((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
@@ -93,6 +175,7 @@ export default function Reader({
 
   /** Capture the finished text selection and offer highlight/comment/notebook. */
   function handleMouseUp() {
+    if (tool !== 'read') return; // markup tools own the pointer
     // Let the browser finalize the selection first.
     setTimeout(() => {
       const sel = window.getSelection();
@@ -220,6 +303,53 @@ export default function Reader({
         </div>
       </header>
 
+      <div className="mark-bar">
+        {TOOLS.map((t) => (
+          <button
+            key={t.id}
+            className={`mode-btn${tool === t.id ? ' on' : ''}`}
+            title={t.label}
+            onClick={() => setTool(t.id)}
+          >
+            {t.icon} {t.id === 'read' ? 'Read' : t.label.split(' ')[0]}
+          </button>
+        ))}
+        {(tool === 'pen' || tool === 'text') && (
+          <div className="pen-tools">
+            {INKS.map((c) => (
+              <button
+                key={c}
+                className={`pen-sw${inkColor === c ? ' on' : ''}`}
+                style={{ background: c }}
+                onClick={() => setInkColor(c)}
+              />
+            ))}
+          </div>
+        )}
+        {tool === 'marker' && (
+          <div className="pen-tools">
+            {COLORS.map((c) => (
+              <button
+                key={c}
+                className={`pen-sw${markerColor === c ? ' on' : ''}`}
+                style={{ background: c }}
+                onClick={() => setMarkerColor(c)}
+              />
+            ))}
+          </div>
+        )}
+        <span className="mark-hint">
+          {tool === 'read'
+            ? 'Select text to highlight it — or pick a tool and write straight onto the page.'
+            : tool === 'text'
+              ? 'Click the page to place text; drag to move it. Esc to finish.'
+              : tool === 'erase'
+                ? 'Click or drag over ink to remove it.'
+                : 'Draw straight onto the page — saved automatically. Esc to finish.'}
+        </span>
+        <span className="mark-status">{markStatus}</span>
+      </div>
+
       {loadError && (
         <div className="err-bar">
           {loadError}
@@ -231,7 +361,7 @@ export default function Reader({
         <main
           className={`pdf-pane paper-scroll${
             openAnnotation && layout === 'twin' ? ' twin' : ''
-          }`}
+          }${tool !== 'read' ? ' marking' : ''}`}
           onMouseUp={handleMouseUp}
           onScroll={() => setPending(null)}
         >
@@ -265,6 +395,13 @@ export default function Reader({
                     anns={byPage.get(n) ?? []}
                     activeId={openNoteId}
                     onPick={setOpenNoteId}
+                  />
+                  <MarkupLayer
+                    marks={marksByPage[n] ?? EMPTY_MARKS}
+                    tool={tool}
+                    inkColor={inkColor}
+                    markerColor={markerColor}
+                    onChange={(next) => updateMarks(n, next)}
                   />
                   <span className="folio">— {n} —</span>
                 </div>

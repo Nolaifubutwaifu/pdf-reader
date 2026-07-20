@@ -1,6 +1,13 @@
 import { supabase } from './supabase';
 import { dropCached, getCached, putCached } from './cache';
-import type { AnnotationRow, DocumentRow, NRect, Stroke } from './types';
+import type {
+  AnnotationRow,
+  DocumentRow,
+  NRect,
+  PageMarks,
+  SearchHit,
+  Stroke,
+} from './types';
 
 const BUCKET = 'pdfs';
 
@@ -159,4 +166,77 @@ export async function updateAnnotation(
 export async function deleteAnnotation(id: string): Promise<void> {
   const { error } = await supabase.from('annotations').delete().eq('id', id);
   if (error) throw new Error(`Could not delete: ${error.message}`);
+}
+
+/* ————— Direct page markup (pen / marker / placed text) ————— */
+
+export async function listPageMarks(documentId: string): Promise<Record<number, PageMarks>> {
+  const { data, error } = await supabase
+    .from('page_marks')
+    .select('page, strokes, texts')
+    .eq('document_id', documentId);
+  const rows = must(data, error, 'Could not load your page markup');
+  const out: Record<number, PageMarks> = {};
+  for (const r of rows) out[r.page] = { strokes: r.strokes ?? [], texts: r.texts ?? [] };
+  return out;
+}
+
+export async function savePageMarks(
+  documentId: string,
+  page: number,
+  marks: PageMarks,
+): Promise<void> {
+  const { data: auth } = await supabase.auth.getUser();
+  const userId = auth.user?.id;
+  if (!userId) throw new Error('You are signed out — sign in again to save markup.');
+  const { error } = await supabase.from('page_marks').upsert(
+    {
+      document_id: documentId,
+      user_id: userId,
+      page,
+      strokes: marks.strokes,
+      texts: marks.texts,
+    },
+    { onConflict: 'document_id,page' },
+  );
+  if (error) throw new Error(`Could not save markup: ${error.message}`);
+}
+
+/* ————— Full-text search ————— */
+
+/** Whether a document's page text has been extracted for search yet. */
+export async function isIndexed(documentId: string): Promise<boolean> {
+  const { count } = await supabase
+    .from('document_pages')
+    .select('id', { count: 'exact', head: true })
+    .eq('document_id', documentId);
+  return (count ?? 0) > 0;
+}
+
+/** Store extracted page text so the document becomes searchable. */
+export async function saveDocumentText(
+  documentId: string,
+  pages: { page: number; text: string }[],
+): Promise<void> {
+  const { data: auth } = await supabase.auth.getUser();
+  const userId = auth.user?.id;
+  if (!userId) return;
+  for (let i = 0; i < pages.length; i += 100) {
+    const chunk = pages.slice(i, i + 100).map((p) => ({
+      document_id: documentId,
+      user_id: userId,
+      page: p.page,
+      text: p.text.slice(0, 20000),
+    }));
+    const { error } = await supabase
+      .from('document_pages')
+      .upsert(chunk, { onConflict: 'document_id,page' });
+    if (error) throw new Error(`Could not index the document: ${error.message}`);
+  }
+}
+
+/** One ranked search across page text, notes, and document titles. */
+export async function searchLibrary(q: string): Promise<SearchHit[]> {
+  const { data, error } = await supabase.rpc('search_library', { q });
+  return must(data as SearchHit[], error, 'Search failed');
 }

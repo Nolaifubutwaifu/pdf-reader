@@ -3,10 +3,30 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
-import { annotationCounts, deleteDocument, listDocuments, uploadDocument } from '@/lib/data';
+import {
+  annotationCounts,
+  deleteDocument,
+  listDocuments,
+  saveDocumentText,
+  uploadDocument,
+} from '@/lib/data';
 import { dismissLegacy, importLegacy, legacyCount } from '@/lib/legacy';
-import type { DocumentRow } from '@/lib/types';
+import { extractPdfText } from '@/lib/extract';
+import type { DocumentRow, SearchHit } from '@/lib/types';
+import type { OpenTarget } from './App';
 import NotesOverview from './NotesOverview';
+import SearchBox from './SearchBox';
+
+/** Index a fresh upload for search, off the critical path. */
+function indexInBackground(documentId: string, blob: Blob) {
+  void (async () => {
+    try {
+      await saveDocumentText(documentId, await extractPdfText(blob));
+    } catch {
+      // The reader lazily indexes on first open if this didn't finish.
+    }
+  })();
+}
 
 const COVERS = [
   { cover: '#3a270d', spine: '#7d5411' },
@@ -28,7 +48,7 @@ export default function Library({
   onOpen,
 }: {
   session: Session;
-  onOpen: (doc: DocumentRow, noteId?: string) => void;
+  onOpen: (doc: DocumentRow, target?: OpenTarget) => void;
 }) {
   const [docs, setDocs] = useState<DocumentRow[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -69,6 +89,7 @@ export default function Library({
       setBusy(`Uploading ${i + 1} of ${pdfs.length}…`);
       try {
         last = await uploadDocument(f, f.name.replace(/\.pdf$/i, ''));
+        indexInBackground(last.id, f);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
@@ -82,7 +103,9 @@ export default function Library({
     setBusy('Adding the sample essay…');
     try {
       const res = await fetch('/sample.pdf');
-      const doc = await uploadDocument(await res.blob(), 'On Reading Well');
+      const blob = await res.blob();
+      const doc = await uploadDocument(blob, 'On Reading Well');
+      indexInBackground(doc.id, blob);
       await refresh();
       onOpen(doc);
     } catch (e) {
@@ -238,6 +261,16 @@ export default function Library({
         )}
         {busy && <div className="busy-bar">{busy}</div>}
 
+        <SearchBox
+          onPick={(hit: SearchHit) => {
+            const target = docs.find((d) => d.id === hit.document_id);
+            if (!target) return;
+            if (hit.kind === 'note') onOpen(target, { noteId: hit.ref_id });
+            else if (hit.kind === 'page' && hit.page != null) onOpen(target, { page: hit.page });
+            else onOpen(target);
+          }}
+        />
+
         <div className="pills">
           {shelves.map((s) => (
             <button
@@ -307,7 +340,7 @@ export default function Library({
           onJump={(a) => {
             const target = docs.find((d) => d.id === a.document_id);
             setOverview(false);
-            if (target) onOpen(target, a.id);
+            if (target) onOpen(target, { noteId: a.id });
           }}
         />
       )}

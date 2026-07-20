@@ -23,6 +23,41 @@ export interface DocumentRow {
   last_opened_at: string | null;
 }
 
+/** A stroke drawn directly on a PDF page. Width is a fraction of page width. */
+export interface PenStroke {
+  tool: 'pen' | 'marker';
+  color: string;
+  width: number;
+  pts: { x: number; y: number }[];
+}
+
+/** A text box placed directly on a PDF page. Size is a fraction of page width. */
+export interface TextMark {
+  id: string;
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  size: number;
+}
+
+/** All direct markup on one page. */
+export interface PageMarks {
+  strokes: PenStroke[];
+  texts: TextMark[];
+}
+
+export interface SearchHit {
+  kind: 'page' | 'note' | 'document';
+  document_id: string;
+  ref_id: string;
+  page: number | null;
+  title: string;
+  /** For page hits: a ts_headline fragment with «…» around matches. */
+  snippet: string | null;
+  rank: number;
+}
+
 export interface AnnotationRow {
   id: string;
   document_id: string;

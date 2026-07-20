@@ -8,16 +8,21 @@ import AuthGate from './AuthGate';
 import Library from './Library';
 import Reader from './Reader';
 
+export interface OpenTarget {
+  noteId?: string;
+  page?: number;
+}
+
 export default function App() {
   return <AuthGate>{(session) => <Shell session={session} />}</AuthGate>;
 }
 
 function Shell({ session }: { session: Session }) {
   const [doc, setDoc] = useState<DocumentRow | null>(null);
-  const [jumpNoteId, setJumpNoteId] = useState<string | null>(null);
+  const [jump, setJump] = useState<OpenTarget>({});
 
-  function open(next: DocumentRow, noteId?: string) {
-    setJumpNoteId(noteId ?? null);
+  function open(next: DocumentRow, target?: OpenTarget) {
+    setJump(target ?? {});
     setDoc(next);
     void touchDocument(next.id);
   }
@@ -25,11 +30,13 @@ function Shell({ session }: { session: Session }) {
   if (doc) {
     return (
       <Reader
+        key={doc.id}
         doc={doc}
-        initialNoteId={jumpNoteId}
+        initialNoteId={jump.noteId ?? null}
+        initialPage={jump.page ?? null}
         onBack={() => {
           setDoc(null);
-          setJumpNoteId(null);
+          setJump({});
         }}
       />
     );
